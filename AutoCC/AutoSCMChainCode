@@ -27,8 +27,11 @@ type User struct {
 type Asset struct {
 	Name string `json:"name"`
 	Id   string `json:"id"`
+	PartMFGDate string `json:"part_mfg_date"`
+	PartProPlace string `json:"part_pro_place"`
+	PartPrice string `json:"part_price"`
 	//Metadata map[string]string `json:"metadata"` // 特殊属性
-	Metadata string `json:"metadata"` // 特殊属性
+	//Metadata string `json:"metadata"` // 特殊属性
 }
 
 // 资产交易历史
@@ -48,31 +51,23 @@ func constructAssetKey(assetId string) string {
 
 // 用户开户
 func userRegister(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// 套路1：检查参数的个数
+
 	if len(args) != 2 {
 		return shim.Error("not enough args")
 	}
-
-	// 套路2：验证参数的正确性
 	name := args[0]
 	id := args[1]
 	if name == "" || id == "" {
 		return shim.Error("invalid args")
 	}
-
-	// 套路3：验证数据是否存在 应该存在 or 不应该存在
 	if userBytes, err := stub.GetState(constructUserKey(id)); err == nil && len(userBytes) != 0 {
 		return shim.Error("user already exist")
 	}
-
-	// 套路4：写入状态
 	user := &User{
 		Name:   name,
 		Id:     id,
 		Assets: make([]string, 0),
 	}
-
-	// 序列化对象,将用户id写入数据库
 	userBytes, err := json.Marshal(user)
 	if err != nil {
 		return shim.Error(fmt.Sprintf("marshal user error %s", err))
@@ -81,31 +76,23 @@ func userRegister(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	if err := stub.PutState(constructUserKey(id), userBytes); err != nil {
 		return shim.Error(fmt.Sprintf("put user error %s", err))
 	}
-
 	// 成功返回
 	return shim.Success(nil)
 }
 
 // 用户销户
 func userDestroy(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// 套路1：检查参数的个数
 	if len(args) != 1 {
 		return shim.Error("not enough args")
 	}
-
-	// 套路2：验证参数的正确性
 	id := args[0]
 	if id == "" {
 		return shim.Error("invalid args")
 	}
-
-	// 套路3：验证数据是否存在 应该存在 or 不应该存在
 	userBytes, err := stub.GetState(constructUserKey(id))
 	if err != nil || len(userBytes) == 0 {
 		return shim.Error("user not found")
 	}
-
-	// 套路4：写入状态
 	if err := stub.DelState(constructUserKey(id)); err != nil {
 		return shim.Error(fmt.Sprintf("delete user error: %s", err))
 	}
@@ -126,21 +113,19 @@ func userDestroy(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 // 资产登记
 func assetEnroll(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// 套路1：检查参数的个数
-	if len(args) != 4 {
+	if len(args) != 6 {
 		return shim.Error("not enough args")
 	}
-
-	// 套路2：验证参数的正确性
 	assetName := args[0]
 	assetId := args[1]
-	metadata := args[2]
-	ownerId := args[3]
+	ownerId := args[2]
+	partMFGDate := args[3]
+	partProPlace := args[4]
+	partPrice := args[5]
+
 	if assetName == "" || assetId == "" || ownerId == "" {
 		return shim.Error("invalid args")
 	}
-
-	// 套路3：验证数据是否存在 应该存在 or 不应该存在
 	userBytes, err := stub.GetState(constructUserKey(ownerId))
 	if err != nil || len(userBytes) == 0 {
 		return shim.Error("user not found")
@@ -150,12 +135,13 @@ func assetEnroll(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 		return shim.Error("asset already exist")
 	}
 
-	// 套路4：写入状态
 	// 1. 写入资产对象 2. 更新用户对象 3. 写入资产变更记录
 	asset := &Asset{
 		Name:     assetName,
 		Id:       assetId,
-		Metadata: metadata,
+		PartMFGDate:  partMFGDate,
+		PartProPlace: partProPlace,
+		PartPrice: partPrice,
 	}
 	assetBytes, err := json.Marshal(asset)
 	if err != nil {
@@ -209,20 +195,15 @@ func assetEnroll(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 // 资产转让
 func assetExchange(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// 套路1：检查参数的个数
 	if len(args) != 3 {
 		return shim.Error("not enough args")
 	}
-
-	// 套路2：验证参数的正确性
 	ownerId := args[0]
 	assetId := args[1]
 	currentOwnerId := args[2]
 	if ownerId == "" || assetId == "" || currentOwnerId == "" {
 		return shim.Error("invalid args")
 	}
-
-	// 套路3：验证数据是否存在 应该存在 or 不应该存在
 	originOwnerBytes, err := stub.GetState(constructUserKey(ownerId))
 	if err != nil || len(originOwnerBytes) == 0 {
 		return shim.Error("user not found")
@@ -255,7 +236,6 @@ func assetExchange(stub shim.ChaincodeStubInterface, args []string) pb.Response 
 		return shim.Error("asset owner not match")
 	}
 
-	// 套路4：写入状态
 	// 1. 原是拥有者删除资产id 2. 新拥有者加入资产id 3. 资产变更记录
 	assetIds := make([]string, 0)
 	for _, aid := range originOwner.Assets {
@@ -320,18 +300,13 @@ func assetExchange(stub shim.ChaincodeStubInterface, args []string) pb.Response 
 
 // 用户查询
 func queryUser(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// 套路1：检查参数的个数
 	if len(args) != 1 {
 		return shim.Error("not enough args")
 	}
-
-	// 套路2：验证参数的正确性
 	ownerId := args[0]
 	if ownerId == "" {
 		return shim.Error("invalid args")
 	}
-
-	// 套路3：验证数据是否存在 应该存在 or 不应该存在
 	userBytes, err := stub.GetState(constructUserKey(ownerId))
 	if err != nil || len(userBytes) == 0 {
 		return shim.Error("user not found")
@@ -342,18 +317,13 @@ func queryUser(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 // 资产查询
 func queryAsset(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// 套路1：检查参数的个数
 	if len(args) != 1 {
 		return shim.Error("not enough args")
 	}
-
-	// 套路2：验证参数的正确性
 	assetId := args[0]
 	if assetId == "" {
 		return shim.Error("invalid args")
 	}
-
-	// 套路3：验证数据是否存在 应该存在 or 不应该存在
 	assetBytes, err := stub.GetState(constructAssetKey(assetId))
 	if err != nil || len(assetBytes) == 0 {
 		return shim.Error("asset not found")
@@ -364,12 +334,9 @@ func queryAsset(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 // 资产变更历史查询
 func queryAssetHistory(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// 套路1：检查参数的个数
 	if len(args) != 2 && len(args) != 1 {
 		return shim.Error("not enough args")
 	}
-
-	// 套路2：验证参数的正确性
 	assetId := args[0]
 	if assetId == "" {
 		return shim.Error("invalid args")
@@ -383,8 +350,6 @@ func queryAssetHistory(stub shim.ChaincodeStubInterface, args []string) pb.Respo
 	if queryType != "all" && queryType != "enroll" && queryType != "exchange" {
 		return shim.Error(fmt.Sprintf("queryType unknown %s", queryType))
 	}
-
-	// 套路3：验证数据是否存在 应该存在 or 不应该存在
 	assetBytes, err := stub.GetState(constructAssetKey(assetId))
 	if err != nil || len(assetBytes) == 0 {
 		return shim.Error("asset not found")
